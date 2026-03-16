@@ -453,6 +453,46 @@
       font-size: 11px;
       color: var(--fg-dim);
     }
+    .table-toolbar-right {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .btn-copy {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      padding: 4px 10px;
+      border-radius: var(--radius);
+      border: 1px solid var(--border);
+      background: var(--bg-elevated);
+      color: var(--fg-dim);
+      font-family: var(--font);
+      font-size: 11px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: color 0.15s, border-color 0.15s, background 0.15s;
+      white-space: nowrap;
+    }
+    .btn-copy:hover {
+      color: var(--fg-bright);
+      border-color: var(--fg-muted);
+      background: var(--bg-hover);
+    }
+    .btn-copy.copied {
+      color: var(--green);
+      border-color: rgba(38,166,154,0.4);
+      background: var(--green-bg);
+    }
+    .btn-copy svg {
+      width: 13px;
+      height: 13px;
+      fill: none;
+      stroke: currentColor;
+      stroke-width: 2;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+    }
     .table-wrapper {
       max-height: 480px;
       overflow-y: auto;
@@ -852,7 +892,13 @@
         <div class="table-panel">
           <div class="table-toolbar">
             <span class="table-toolbar-title">Price Data</span>
-            <span class="table-toolbar-count">${d.data_points} rows</span>
+            <div class="table-toolbar-right">
+              <span class="table-toolbar-count">${d.data_points} rows</span>
+              <button type="button" class="btn-copy" id="copyBtn" onclick="copyTableTSV()">
+                <svg viewBox="0 0 24 24"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>
+                Copy
+              </button>
+            </div>
           </div>
           <div class="table-wrapper">
             <table class="data-table" id="dataTable">
@@ -877,6 +923,36 @@
         const table = document.getElementById("dataTable");
         table.querySelector("thead tr").innerHTML = renderTableHead(currentData);
         table.querySelector("tbody").innerHTML = renderTableRows(currentData.table);
+      });
+    }
+
+    // ── Copy table as TSV (spreadsheet-compatible) ──
+    function copyTableTSV() {
+      if (!currentData) return;
+      const d = currentData;
+      const headers = COLUMNS.map(c => c.labelFn ? c.labelFn(d) : c.label);
+      const sorted = [...d.table].sort((a, b) => {
+        const av = a[sortCol], bv = b[sortCol];
+        if (av < bv) return sortAsc ? -1 : 1;
+        if (av > bv) return sortAsc ? 1 : -1;
+        return 0;
+      });
+      const rows = sorted.map(r => [
+        r.date,
+        r.stock_price.toFixed(2),
+        r.stock_chg.toFixed(2) + '%',
+        r.market_price.toFixed(2),
+        r.market_chg.toFixed(2) + '%',
+      ].join('\t'));
+      const tsv = [headers.join('\t'), ...rows].join('\n');
+      navigator.clipboard.writeText(tsv).then(() => {
+        const btn = document.getElementById('copyBtn');
+        btn.classList.add('copied');
+        btn.innerHTML = `<svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>Copied!`;
+        setTimeout(() => {
+          btn.classList.remove('copied');
+          btn.innerHTML = `<svg viewBox="0 0 24 24"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>Copy`;
+        }, 2000);
       });
     }
 
