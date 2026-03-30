@@ -1,0 +1,297 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SEC Filing Analyzer</title>
+  <style>
+    :root {
+      --bg-page: #131722;
+      --bg-card: #1e222d;
+      --bg-elevated: #2a2e39;
+      --bg-hover: #363a45;
+      --border: #363a45;
+      --fg: #d1d4dc;
+      --fg-dim: #787b86;
+      --accent: #2962ff;
+      --accent-hover: #1e53e5;
+      --success: #26a69a;
+      --warn: #ff9800;
+      --error: #ef5350;
+    }
+
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: var(--bg-page);
+      color: var(--fg);
+      min-height: 100vh;
+    }
+
+    header {
+      background: var(--bg-card);
+      border-bottom: 1px solid var(--border);
+      padding: 20px 32px;
+    }
+    header h1 { font-size: 22px; font-weight: 600; }
+    header p { color: var(--fg-dim); font-size: 13px; margin-top: 4px; }
+
+    .container { max-width: 960px; margin: 0 auto; padding: 32px 24px; }
+
+    /* ── Input ── */
+    .input-row {
+      display: flex; gap: 12px; margin-bottom: 32px;
+    }
+    .input-row input {
+      flex: 1; padding: 12px 16px; font-size: 15px;
+      background: var(--bg-elevated); color: var(--fg);
+      border: 1px solid var(--border); border-radius: 8px;
+      outline: none; transition: border-color .15s;
+    }
+    .input-row input:focus { border-color: var(--accent); }
+    .input-row input::placeholder { color: var(--fg-dim); }
+    .input-row button {
+      padding: 12px 28px; font-size: 15px; font-weight: 600;
+      background: var(--accent); color: #fff; border: none; border-radius: 8px;
+      cursor: pointer; transition: background .15s; white-space: nowrap;
+    }
+    .input-row button:hover { background: var(--accent-hover); }
+    .input-row button:disabled { opacity: .5; cursor: not-allowed; }
+
+    /* ── Progress timeline ── */
+    .timeline { margin-bottom: 32px; }
+    .timeline-step {
+      display: flex; align-items: center; gap: 12px;
+      padding: 10px 0; color: var(--fg-dim); font-size: 14px;
+    }
+    .timeline-step .dot {
+      width: 10px; height: 10px; border-radius: 50%;
+      background: var(--bg-elevated); border: 2px solid var(--border);
+      flex-shrink: 0; transition: all .3s;
+    }
+    .timeline-step.running .dot {
+      background: var(--accent); border-color: var(--accent);
+      box-shadow: 0 0 8px var(--accent);
+      animation: pulse 1.2s infinite;
+    }
+    .timeline-step.complete .dot {
+      background: var(--success); border-color: var(--success);
+    }
+    .timeline-step.error .dot {
+      background: var(--error); border-color: var(--error);
+    }
+    .timeline-step.running, .timeline-step.complete { color: var(--fg); }
+
+    @keyframes pulse {
+      0%, 100% { box-shadow: 0 0 4px var(--accent); }
+      50% { box-shadow: 0 0 14px var(--accent); }
+    }
+
+    /* ── Cards ── */
+    .card {
+      background: var(--bg-card); border: 1px solid var(--border);
+      border-radius: 10px; padding: 24px; margin-bottom: 20px;
+      display: none;
+    }
+    .card.visible { display: block; animation: fadeIn .4s ease; }
+    .card h2 {
+      font-size: 16px; font-weight: 600; margin-bottom: 16px;
+      padding-bottom: 10px; border-bottom: 1px solid var(--border);
+    }
+
+    @keyframes fadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+
+    /* ── Table ── */
+    table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    th { text-align: left; color: var(--fg-dim); font-weight: 500; padding: 8px 12px; border-bottom: 1px solid var(--border); }
+    td { padding: 8px 12px; border-bottom: 1px solid var(--bg-elevated); }
+    td a { color: var(--accent); text-decoration: none; }
+    td a:hover { text-decoration: underline; }
+
+    /* ── Analysis / Summary ── */
+    .prose { line-height: 1.7; font-size: 14px; white-space: pre-wrap; }
+    .summary-box {
+      background: var(--bg-elevated); border-left: 3px solid var(--success);
+      padding: 16px 20px; border-radius: 0 8px 8px 0;
+      line-height: 1.7; font-size: 14px;
+    }
+
+    .error-banner {
+      background: rgba(239,83,80,.12); border: 1px solid var(--error);
+      color: var(--error); padding: 14px 20px; border-radius: 8px;
+      margin-bottom: 20px; display: none; font-size: 14px;
+    }
+    .error-banner.visible { display: block; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>SEC Filing Analyzer</h1>
+    <p>Multi-agent pipeline: Fetcher &rarr; Researcher &rarr; Analyst &rarr; Summarizer &mdash; powered by Claude + LangGraph</p>
+  </header>
+
+  <div class="container">
+    <div class="input-row">
+      <input id="companyInput" type="text" placeholder="Enter company name or ticker (e.g. Apple, AAPL)" autocomplete="off">
+      <button id="analyzeBtn" onclick="startAnalysis()">Analyze</button>
+    </div>
+
+    <div id="errorBanner" class="error-banner"></div>
+
+    <div id="timeline" class="timeline" style="display:none">
+      <div class="timeline-step" data-agent="fetcher"><span class="dot"></span>Fetcher &mdash; resolving company &amp; downloading filings</div>
+      <div class="timeline-step" data-agent="researcher"><span class="dot"></span>Researcher &mdash; extracting financial metrics</div>
+      <div class="timeline-step" data-agent="analyst"><span class="dot"></span>Analyst &mdash; checking completeness &amp; analysing</div>
+      <div class="timeline-step" data-agent="summarizer"><span class="dot"></span>Summarizer &mdash; writing final report</div>
+    </div>
+
+    <div id="cardFilings" class="card">
+      <h2>SEC Filings Found</h2>
+      <table>
+        <thead><tr><th>Date</th><th>Form</th><th>Document</th></tr></thead>
+        <tbody id="filingsBody"></tbody>
+      </table>
+      <p id="downloadedCount" style="margin-top:12px;color:var(--fg-dim);font-size:13px;"></p>
+    </div>
+
+    <div id="cardMetrics" class="card">
+      <h2>Extracted Metrics</h2>
+      <div id="metricsContent"></div>
+    </div>
+
+    <div id="cardAnalysis" class="card">
+      <h2>Analyst Report</h2>
+      <div id="analysisContent" class="prose"></div>
+    </div>
+
+    <div id="cardSummary" class="card">
+      <h2>Summary</h2>
+      <div id="summaryContent" class="summary-box"></div>
+    </div>
+  </div>
+
+  <script>
+    const input = document.getElementById('companyInput');
+    const btn = document.getElementById('analyzeBtn');
+
+    input.addEventListener('keydown', e => { if (e.key === 'Enter') startAnalysis(); });
+
+    function startAnalysis() {
+      const company = input.value.trim();
+      if (!company) return;
+
+      btn.disabled = true;
+      btn.textContent = 'Analyzing...';
+
+      // Reset UI
+      document.getElementById('errorBanner').classList.remove('visible');
+      document.getElementById('timeline').style.display = '';
+      document.querySelectorAll('.timeline-step').forEach(s => s.className = 'timeline-step');
+      ['cardFilings','cardMetrics','cardAnalysis','cardSummary'].forEach(id => {
+        document.getElementById(id).classList.remove('visible');
+      });
+
+      const source = new EventSource('/analyze?company=' + encodeURIComponent(company));
+
+      source.onmessage = function(event) {
+        const d = JSON.parse(event.data);
+
+        if (d.agent === 'done') {
+          source.close();
+          btn.disabled = false;
+          btn.textContent = 'Analyze';
+          return;
+        }
+
+        if (d.agent === 'error') {
+          source.close();
+          showError(d.data?.message || 'An unexpected error occurred.');
+          btn.disabled = false;
+          btn.textContent = 'Analyze';
+          return;
+        }
+
+        // Update timeline
+        if (d.status === 'running' || d.status === 'retry') {
+          setStep(d.agent, 'running');
+        } else if (d.status === 'complete') {
+          setStep(d.agent, 'complete');
+          renderCard(d.agent, d.data);
+        }
+      };
+
+      source.onerror = function() {
+        source.close();
+        showError('Connection lost. Please try again.');
+        btn.disabled = false;
+        btn.textContent = 'Analyze';
+      };
+    }
+
+    function setStep(agent, cls) {
+      const el = document.querySelector(`.timeline-step[data-agent="${agent}"]`);
+      if (el) el.className = 'timeline-step ' + cls;
+    }
+
+    function showError(msg) {
+      const banner = document.getElementById('errorBanner');
+      banner.textContent = msg;
+      banner.classList.add('visible');
+    }
+
+    function renderCard(agent, data) {
+      if (agent === 'fetcher' && data) {
+        const tbody = document.getElementById('filingsBody');
+        tbody.innerHTML = '';
+        (data.filings || []).forEach(f => {
+          const tr = document.createElement('tr');
+          tr.innerHTML = `<td>${esc(f.date)}</td><td>${esc(f.form)}</td><td><a href="${esc(f.url)}" target="_blank" rel="noopener">${esc(f.primary_doc)}</a></td>`;
+          tbody.appendChild(tr);
+        });
+        document.getElementById('downloadedCount').textContent =
+          `${data.downloaded || 0} 10-Q document(s) downloaded for metric extraction.`;
+        document.getElementById('cardFilings').classList.add('visible');
+      }
+
+      if (agent === 'researcher' && data) {
+        const container = document.getElementById('metricsContent');
+        const metrics = data.metrics || [];
+        if (!metrics.length) {
+          container.innerHTML = '<p style="color:var(--fg-dim)">No metrics extracted.</p>';
+        } else {
+          let html = '';
+          metrics.forEach(m => {
+            const file = m.source_file || 'Unknown';
+            html += `<h3 style="font-size:14px;margin:12px 0 8px;color:var(--fg-dim)">${esc(file)}</h3>`;
+            html += '<table><thead><tr><th>Metric</th><th>Value</th></tr></thead><tbody>';
+            Object.entries(m).forEach(([k, v]) => {
+              if (k === 'source_file') return;
+              html += `<tr><td>${esc(k)}</td><td>${v !== null ? esc(String(v)) : '<span style="color:var(--fg-dim)">—</span>'}</td></tr>`;
+            });
+            html += '</tbody></table>';
+          });
+          container.innerHTML = html;
+        }
+        document.getElementById('cardMetrics').classList.add('visible');
+      }
+
+      if (agent === 'analyst' && data) {
+        document.getElementById('analysisContent').textContent = data.analysis || '';
+        document.getElementById('cardAnalysis').classList.add('visible');
+      }
+
+      if (agent === 'summarizer' && data) {
+        document.getElementById('summaryContent').textContent = data.summary || '';
+        document.getElementById('cardSummary').classList.add('visible');
+      }
+    }
+
+    function esc(s) {
+      const d = document.createElement('div');
+      d.textContent = s;
+      return d.innerHTML;
+    }
+  </script>
+</body>
+</html>
